@@ -193,6 +193,10 @@ def create_venv_for_local_sandbox(sandbox_dir_path: str, venv_path: str, env: Di
 
 
 def add_imports_and_pydantic_schemas_for_args(args_json_schema: dict) -> str:
+    # Ensure the schema has a title so datamodel-code-generator emits a class named
+    # "DynamicModel", matching the fallback in generate_model_from_args_json_schema.
+    if "title" not in args_json_schema:
+        args_json_schema = {**args_json_schema, "title": "DynamicModel"}
     data_model_types = get_data_model_types(DataModelType.PydanticV2BaseModel, target_python_version=PythonVersion.PY_311)
     parser = JsonSchemaParser(
         str(args_json_schema),
