@@ -1219,6 +1219,17 @@ class OpenAIClient(LLMClientBase):
         """
         is_byok = (llm_config.provider_category == ProviderCategory.byok) if llm_config else None
 
+        # Derive a human-readable provider label for error messages.
+        # Falls back to "OpenAI" when llm_config is absent or provider_name is "openai".
+        provider_label = "OpenAI"
+        if llm_config and llm_config.provider_name and llm_config.provider_name != "openai":
+            if llm_config.model_endpoint:
+                from urllib.parse import urlparse
+                _netloc = urlparse(llm_config.model_endpoint).netloc
+                provider_label = _netloc if _netloc else llm_config.provider_name
+            else:
+                provider_label = llm_config.provider_name
+
         # Log OpenRouter upstream provider errors with searchable tag
         if llm_config and self._is_openrouter_request(llm_config):
             or_provider = self._extract_openrouter_provider(e)
@@ -1233,7 +1244,7 @@ class OpenAIClient(LLMClientBase):
             timeout_duration = getattr(e, "timeout", "unknown")
             logger.warning(f"[OpenAI] Request timeout after {timeout_duration} seconds: {e}")
             return LLMTimeoutError(
-                message=f"Request to OpenAI timed out: {str(e)}",
+                message=f"Request to {provider_label} timed out: {str(e)}",
                 code=ErrorCode.TIMEOUT,
                 details={
                     "timeout_duration": timeout_duration,
@@ -1245,7 +1256,7 @@ class OpenAIClient(LLMClientBase):
         if isinstance(e, openai.APIConnectionError):
             logger.warning(f"[OpenAI] API connection error: {e}")
             return LLMConnectionError(
-                message=f"Failed to connect to OpenAI: {str(e)}",
+                message=f"Failed to connect to {provider_label}: {str(e)}",
                 code=ErrorCode.INTERNAL_SERVER_ERROR,
                 details={"cause": str(e.__cause__) if e.__cause__ else None, "is_byok": is_byok},
             )
@@ -1256,7 +1267,7 @@ class OpenAIClient(LLMClientBase):
         if isinstance(e, httpx.RemoteProtocolError):
             logger.warning(f"[OpenAI] Remote protocol error during streaming: {e}")
             return LLMConnectionError(
-                message=f"Connection error during OpenAI streaming: {str(e)}",
+                message=f"Connection error during {provider_label} streaming: {str(e)}",
                 code=ErrorCode.INTERNAL_SERVER_ERROR,
                 details={"cause": str(e.__cause__) if e.__cause__ else None, "is_byok": is_byok},
             )
@@ -1266,16 +1277,16 @@ class OpenAIClient(LLMClientBase):
         if isinstance(e, (httpx.ReadError, httpx.WriteError, httpx.ConnectError)):
             logger.warning(f"[OpenAI] Network error during streaming: {type(e).__name__}: {e}")
             return LLMConnectionError(
-                message=f"Network error during OpenAI streaming: {str(e)}",
+                message=f"Network error during {provider_label} streaming: {str(e)}",
                 code=ErrorCode.INTERNAL_SERVER_ERROR,
                 details={"cause": str(e.__cause__) if e.__cause__ else None, "error_type": type(e).__name__, "is_byok": is_byok},
             )
 
         if isinstance(e, openai.RateLimitError):
-            logger.warning(f"[OpenAI] Rate limited (429). Consider backoff. Error: {e}")
+            logger.warning(f"[{provider_label}] Rate limited (429). Consider backoff. Error: {e}")
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMRateLimitError(
-                message=f"Rate limited by OpenAI: {str(e)}",
+                message=f"Rate limited by {provider_label}: {str(e)}",
                 code=ErrorCode.RATE_LIMIT_EXCEEDED,
                 details={**body_details, "is_byok": is_byok},
             )
@@ -1353,7 +1364,7 @@ class OpenAIClient(LLMClientBase):
             logger.error(f"[OpenAI] Authentication error (401): {str(e)}")  # More severe log level
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMAuthenticationError(
-                message=f"Authentication failed with OpenAI: {str(e)}",
+                message=f"Authentication failed with {provider_label}: {str(e)}",
                 code=ErrorCode.UNAUTHENTICATED,
                 details={**body_details, "is_byok": is_byok},
             )
@@ -1362,7 +1373,7 @@ class OpenAIClient(LLMClientBase):
             logger.error(f"[OpenAI] Permission denied (403): {str(e)}")  # More severe log level
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMPermissionDeniedError(
-                message=f"Permission denied by OpenAI: {str(e)}",
+                message=f"Permission denied by {provider_label}: {str(e)}",
                 code=ErrorCode.PERMISSION_DENIED,
                 details={**body_details, "is_byok": is_byok},
             )
@@ -1372,7 +1383,7 @@ class OpenAIClient(LLMClientBase):
             # Could be invalid model name, etc.
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMNotFoundError(
-                message=f"Resource not found in OpenAI: {str(e)}",
+                message=f"Resource not found in {provider_label}: {str(e)}",
                 code=ErrorCode.NOT_FOUND,
                 details={**body_details, "is_byok": is_byok},
             )
@@ -1381,7 +1392,7 @@ class OpenAIClient(LLMClientBase):
             logger.warning(f"[OpenAI] Unprocessable entity (422): {str(e)}")
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMUnprocessableEntityError(
-                message=f"Invalid request content for OpenAI: {str(e)}",
+                message=f"Invalid request content for {provider_label}: {str(e)}",
                 code=ErrorCode.INVALID_ARGUMENT,
                 details={**body_details, "is_byok": is_byok},
             )
