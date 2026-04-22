@@ -1274,12 +1274,19 @@ class OpenAIClient(LLMClientBase):
         if isinstance(e, openai.RateLimitError):
             logger.warning(f"[OpenAI] Rate limited (429). Consider backoff. Error: {e}")
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
+            if llm_config:
+                provider_label = (
+                    llm_config.provider_name
+                    or (llm_config.handle.split("/")[0] if llm_config.handle else None)
+                    or "OpenAI-compatible endpoint"
+                )
+            else:
+                provider_label = "OpenAI-compatible endpoint"
             return LLMRateLimitError(
-                message=f"Rate limited by OpenAI: {str(e)}",
+                message=f"Rate limited by {provider_label}: {str(e)}",
                 code=ErrorCode.RATE_LIMIT_EXCEEDED,
                 details={**body_details, "is_byok": is_byok},
             )
-
         if isinstance(e, openai.BadRequestError):
             logger.warning(f"[OpenAI] Bad request (400): {str(e)}")
             error_str = str(e)
