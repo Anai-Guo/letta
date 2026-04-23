@@ -252,6 +252,12 @@ class OpenAIClient(LLMClientBase):
     def _is_openrouter_request(self, llm_config: LLMConfig) -> bool:
         return (llm_config.model_endpoint and "openrouter.ai" in llm_config.model_endpoint) or (llm_config.provider_name == "openrouter")
 
+    def _get_provider_label(self, llm_config: Optional[LLMConfig]) -> str:
+        """Return a human-readable provider label for error messages."""
+        if llm_config and llm_config.provider_name:
+            return llm_config.provider_name
+        return "OpenAI"
+
     @staticmethod
     def _extract_openrouter_provider(e: Exception) -> str | None:
         """Extract upstream provider name from an OpenRouter error response."""
@@ -1272,10 +1278,11 @@ class OpenAIClient(LLMClientBase):
             )
 
         if isinstance(e, openai.RateLimitError):
+            provider_label = self._get_provider_label(llm_config)
             logger.warning(f"[OpenAI] Rate limited (429). Consider backoff. Error: {e}")
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMRateLimitError(
-                message=f"Rate limited by OpenAI: {str(e)}",
+                message=f"Rate limited by {provider_label}: {str(e)}",
                 code=ErrorCode.RATE_LIMIT_EXCEEDED,
                 details={**body_details, "is_byok": is_byok},
             )
