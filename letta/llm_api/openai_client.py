@@ -1218,6 +1218,7 @@ class OpenAIClient(LLMClientBase):
         Maps OpenAI-specific errors to common LLMError types.
         """
         is_byok = (llm_config.provider_category == ProviderCategory.byok) if llm_config else None
+        provider_label = (llm_config.provider_name or "OpenAI") if llm_config else "OpenAI"
 
         # Log OpenRouter upstream provider errors with searchable tag
         if llm_config and self._is_openrouter_request(llm_config):
@@ -1272,10 +1273,10 @@ class OpenAIClient(LLMClientBase):
             )
 
         if isinstance(e, openai.RateLimitError):
-            logger.warning(f"[OpenAI] Rate limited (429). Consider backoff. Error: {e}")
+            logger.warning(f"[{provider_label}] Rate limited (429). Consider backoff. Error: {e}")
             body_details = e.body if isinstance(e.body, dict) else {"body": e.body}
             return LLMRateLimitError(
-                message=f"Rate limited by OpenAI: {str(e)}",
+                message=f"Rate limited by {provider_label}: {str(e)}",
                 code=ErrorCode.RATE_LIMIT_EXCEEDED,
                 details={**body_details, "is_byok": is_byok},
             )
