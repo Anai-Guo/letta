@@ -227,6 +227,21 @@ class ToolManager:
         # make sure the name matches the json_schema
         if not pydantic_tool.name:
             pydantic_tool.name = pydantic_tool.json_schema.get("name")
+            # json_schema may not carry a name (e.g. a raw parameters-only schema);
+            # fall back to AST-parsing the source code before hitting the DB NOT NULL constraint
+            if not pydantic_tool.name and pydantic_tool.source_code:
+                try:
+                    from letta.functions.ast_parsers import get_function_name_and_docstring
+
+                    pydantic_tool.name, _ = get_function_name_and_docstring(pydantic_tool.source_code)
+                except Exception:
+                    pass
+            if not pydantic_tool.name:
+                raise LettaInvalidArgumentError(
+                    "Tool name could not be derived from json_schema or source_code. "
+                    "Provide a top-level 'name' key in json_schema (OpenAI tool schema) "
+                    "or source_code containing an identifiable function definition."
+                )
         else:
             # if name is provided, make sure its less tahn the MAX_TOOL_NAME_LENGTH
             if len(pydantic_tool.name) > MAX_TOOL_NAME_LENGTH:
