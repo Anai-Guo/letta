@@ -1,6 +1,7 @@
-from typing import Literal
+from typing import Literal, Optional
+import os
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from letta.constants import DEFAULT_EMBEDDING_CHUNK_SIZE
 from letta.schemas.embedding_config import EmbeddingConfig
@@ -13,8 +14,23 @@ from letta.schemas.providers.base import Provider
 class GoogleVertexProvider(Provider):
     provider_type: Literal[ProviderType.google_vertex] = Field(ProviderType.google_vertex, description="The type of the provider.")
     provider_category: ProviderCategory = Field(ProviderCategory.base, description="The category of the provider (base or byok)")
-    google_cloud_project: str = Field(..., description="GCP project ID for the Google Vertex API.")
-    google_cloud_location: str = Field(..., description="GCP region for the Google Vertex API.")
+    google_cloud_project: Optional[str] = Field(None, description="GCP project ID for the Google Vertex API.")
+    google_cloud_location: Optional[str] = Field(None, description="GCP region for the Google Vertex API.")
+
+    @model_validator(mode="after")
+    def _resolve_from_env(self) -> "GoogleVertexProvider":
+        """Fall back to environment variables when fields are absent (e.g. after DB round-trip)."""
+        if self.google_cloud_project is None:
+            self.google_cloud_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if self.google_cloud_location is None:
+            self.google_cloud_location = os.environ.get("GOOGLE_CLOUD_LOCATION")
+        return self
+
+    def _vertex_endpoint_base(self) -> str:
+        """Return the Vertex AI REST base URL, handling the global endpoint correctly."""
+        if self.google_cloud_location == "global":
+            return "https://aiplatform.googleapis.com/v1"
+        return f"https://{self.google_cloud_location}-aiplatform.googleapis.com/v1"
 
     def get_default_max_output_tokens(self, model_name: str) -> int:
         """Get the default max output tokens for Google Vertex models."""
@@ -25,13 +41,14 @@ class GoogleVertexProvider(Provider):
     async def list_llm_models_async(self) -> list[LLMConfig]:
         from letta.llm_api.google_constants import GOOGLE_MODEL_TO_CONTEXT_LENGTH
 
+        endpoint_base = self._vertex_endpoint_base()
         configs = []
         for model, context_length in GOOGLE_MODEL_TO_CONTEXT_LENGTH.items():
             configs.append(
                 LLMConfig(
                     model=model,
                     model_endpoint_type="google_vertex",
-                    model_endpoint=f"https://{self.google_cloud_location}-aiplatform.googleapis.com/v1/projects/{self.google_cloud_project}/locations/{self.google_cloud_location}",
+                    model_endpoint=f"{endpoint_base}/projects/{self.google_cloud_project}/locations/{self.google_cloud_location}",
                     context_window=context_length,
                     handle=self.get_handle(model),
                     max_tokens=self.get_default_max_output_tokens(model),
@@ -44,13 +61,14 @@ class GoogleVertexProvider(Provider):
     async def list_embedding_models_async(self) -> list[EmbeddingConfig]:
         from letta.llm_api.google_constants import GOOGLE_EMBEDING_MODEL_TO_DIM
 
+        endpoint_base = self._vertex_endpoint_base()
         configs = []
         for model, dim in GOOGLE_EMBEDING_MODEL_TO_DIM.items():
             configs.append(
                 EmbeddingConfig(
                     embedding_model=model,
                     embedding_endpoint_type="google_vertex",
-                    embedding_endpoint=f"https://{self.google_cloud_location}-aiplatform.googleapis.com/v1/projects/{self.google_cloud_project}/locations/{self.google_cloud_location}",
+                    embedding_endpoint=f"{endpoint_base}/projects/{self.google_cloud_project}/locations/{self.google_cloud_location}",
                     embedding_dim=dim,
                     embedding_chunk_size=DEFAULT_EMBEDDING_CHUNK_SIZE,  # NOTE: max is 2048
                     handle=self.get_handle(model, is_embedding=True),
@@ -58,3 +76,4 @@ class GoogleVertexProvider(Provider):
                 )
             )
         return configs
+
